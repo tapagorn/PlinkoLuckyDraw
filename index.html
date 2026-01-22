@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Plinko Lucky Draw - ลุ้นรางวัลหรรษา</title>
+    
+    <!-- FingerprintJS for Unique Device ID -->
+    <script>
+        const fpPromise = import('https://openfpcdn.io/fingerprintjs/v4')
+            .then(FingerprintJS => FingerprintJS.load())
+            .catch(err => console.error("FP Load Error", err));
+    </script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* * ==========================================
+         * CSS - Main Styles
+         * ==========================================
+         */
+        :root {
+            --primary-color: #e91e63;
+            --secondary-color: #2196f3;
+            --accent-color: #ffc107;
+            --bg-color: #1a1a2e;
+            --panel-bg: #16213e;
+            --text-color: #ffffff;
+            --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            overscroll-behavior: none; 
+        }
+
+        /* --- Loading Screen --- */
+        #loadingScreen {
+            position: fixed; inset: 0; z-index: 2000;
+            background-color: var(--bg-color);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            transition: opacity 0.5s;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- Header --- */
+        header {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #e91e63, #9c27b0);
+            width: 100%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+            user-select: none;
+            cursor: pointer; /* Hint for admin trigger */
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        p.subtitle { margin: 5px 0 0; opacity: 0.9; font-size: 0.8rem; }
+
+        /* --- Main Game Container --- */
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 500px;
+            padding: 10px;
+            box-sizing: border-box;
+            flex-grow: 1;
+        }
+
+        /* --- Cooldown / Blocked Message --- */
+        #cooldownPanel {
+            display: none; /* Hidden by default */
+            width: 100%;
+            background: rgba(244, 67, 54, 0.15);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .cd-title { color: #ef5350; font-weight: bold; font-size: 1.2rem; margin-bottom: 5px; }
+        .cd-timer { font-family: monospace; font-size: 1.5rem; background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 8px; display: inline-block; margin-top: 10px; }
+
+        /* --- Stats Panel --- */
+        .stats-panel {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            background-color: var(--panel-bg);
+            padding: 10px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .stat-box { text-align: center; flex: 1; }
+        .stat-value { font-size: 1.4rem; font-weight: bold; color: var(--accent-color); }
+        .stat-label { font-size: 0.75rem; color: #aaa; }
+
+        /* --- Canvas & Slots --- */
+        .canvas-wrapper { position: relative; width: 100%; padding-bottom: 5px; }
+        canvas {
+            background: radial-gradient(circle at center, #2a2a4e, #161625);
+            border-radius: 12px 12px 0 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: block; margin: 0 auto;
+            border: 2px solid #333; border-bottom: none;
+            touch-action: none;
+        }
+
+        .slots-container {
+            display: grid; grid-template-columns: repeat(9, 1fr);
+            width: 100%; gap: 1px; background: #333;
+            padding: 2px; border-radius: 0 0 12px 12px; box-sizing: border-box;
+        }
+        .slot {
+            background-color: #222; color: #fff; text-align: center;
+            font-size: clamp(8px, 2.5vw, 14px);
+            padding: 8px 1px;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            min-height: 40px; border-radius: 0 0 4px 4px; position: relative;
+        }
+        .slot.win { background-color: #2e7d32; border-top: 3px solid #4caf50; } 
+        .slot.lose { background-color: #37474f; border-top: 3px solid #546e7a; color: #bbb; } 
+        .slot.jackpot { 
+            background: linear-gradient(to bottom, #f57f17, #ff6f00); 
+            border-top: 3px solid #ffca28; color: #fff; font-weight: bold;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.3);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        /* --- Controls --- */
+        .controls { margin-top: 20px; text-align: center; width: 100%; padding-bottom: 20px; }
+        .btn {
+            background: linear-gradient(45deg, #ff4081, #f50057);
+            border: none; padding: 15px 0; width: 100%;
+            color: white; font-size: 1.2rem; border-radius: 50px;
+            cursor: pointer; box-shadow: 0 5px 15px rgba(233, 30, 99, 0.4);
+            font-weight: bold; transition: transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { background: #555; cursor: not-allowed; box-shadow: none; transform: none; color: #888; }
+        .btn-restart { background: linear-gradient(45deg, #00c853, #64dd17); box-shadow: 0 5px 15px rgba(0, 200, 83, 0.4); display: none; }
+
+        /* --- Log Area --- */
+        .log-container {
+            width: 100%; margin-top: 15px; background: rgba(0,0,0,0.2);
+            border-radius: 8px; padding: 8px; max-height: 120px;
+            overflow-y: auto; font-size: 0.85rem;
+            scrollbar-width: thin; scrollbar-color: #555 transparent;
+        }
+        .log-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .log-success { color: #4caf50; }
+        .log-fail { color: #ff5252; }
+        .log-jackpot { color: #ffd700; font-weight: bold; }
+
+        /* --- Result Modal --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+            padding: 20px; box-sizing: border-box; backdrop-filter: blur(5px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: #1e1e2f; color: #fff;
+            padding: 25px; border-radius: 20px; text-align: center;
+            width: 100%; max-width: 350px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            transform: scale(0.8); transition: transform 0.3s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .reward-box {
+            background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;
+            margin: 15px 0; border: 1px dashed rgba(255,255,255,0.3);
+        }
+        .reward-code { font-family: monospace; font-size: 1.5rem; color: #ffd700; font-weight: bold; letter-spacing: 2px; }
+
+        /* --- Admin Modals --- */
+        .admin-modal-content {
+            background: #12121a; color: #ccc;
+            padding: 20px; border-radius: 12px;
+            width: 95%; max-width: 600px;
+            display: flex; flex-direction: column;
+            max-height: 85vh; border: 1px solid #333;
+        }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .admin-input { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; margin-bottom: 15px; border-radius: 6px; text-align: center; }
+        .admin-table-container { flex: 1; overflow-y: auto; margin-bottom: 15px; background: #1a1a24; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { background: #222; position: sticky; top: 0; text-align: left; padding: 8px; color: #888; }
+        td { padding: 8px; border-bottom: 1px solid #2a2a35; }
+        .status-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
+        .status-win { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+        .status-lose { background: rgba(244, 67, 54, 0.2); color: #ef5350; }
+        
+        .admin-btn { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 0.8rem; margin-right: 5px; color: white; transition: 0.2s; }
+        .admin-btn:hover { filter: brightness(1.2); }
+        .btn-blue { background: #2196f3; }
+        .btn-red { background: #f44336; }
+        .btn-green { background: #4caf50; }
+
+        footer { margin-top: auto; padding: 15px; color: #666; font-size: 0.75rem; text-align: center; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen">
+        <div class="spinner"></div>
+        <p style="color: #aaa;">กำลังโหลดข้อมูล...</p>
+    </div>
+
+    <!-- Header (Admin Trigger) -->
+    <header id="headerTrigger">
+        <h1>💎 PLINKO LUCKY DRAW 💎</h1>
+        <p class="subtitle">ปล่อยลูกบอลลุ้นโชค! ครบ 3 ลูกรู้ผลทันที</p>
+    </header>
+
+    <!-- Game UI -->
+    <div class="game-container">
+        
+        <!-- Cooldown Panel -->
+        <div id="cooldownPanel">
+            <i data-lucide="clock" style="width: 30px; height: 30px; color: #ef5350; margin-bottom: 10px;"></i>
+            <div class="cd-title">ยังไม่ถึงเวลาเล่นรอบถัดไป</div>
+            <div style="font-size: 0.9rem; color: #ccc;">กรุณารอสักครู่แล้วกลับมาใหม่</div>
+            <div id="countdownTimer" class="cd-timer">--:--:--</div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-panel">
+            <div class="stat-box">
+                <div class="stat-value" id="balls-left-display">3</div>
+                <div class="stat-label">ลูกบอลที่เหลือ</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="score-display">0/3</div>
+                <div class="stat-label">เข้าช่องรางวัล</div>
+            </div>
+        </div>
+
+        <!-- Canvas Board -->
+        <div class="canvas-wrapper">
+            <canvas id="plinkoCanvas"></canvas>
+        </div>
+
+        <!-- Slots -->
+        <div class="slots-container" id="slots-ui"></div>
+
+        <!-- Log -->
+        <div class="log-container" id="game-log">
+            <div class="log-item" style="text-align:center; color:#888;">-- เริ่มเกม: กดปุ่มปล่อยลูกบอล --</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="drop-btn" class="btn">🔴 ปล่อยลูกบอล</button>
+            <button id="restart-btn" class="btn btn-restart">🔄 เริ่มเกมใหม่</button>
+        </div>
+
+    </div>
+
+    <!-- User Result Modal -->
+    <div id="result-modal" class="modal-overlay">
+        <div class="modal-content">
+            <span id="modal-icon" style="font-size: 3.5rem; display:block; margin-bottom:10px;">🎉</span>
+            <h2 id="modal-title" style="margin:0; font-size: 1.6rem; color: #4caf50;">ยินดีด้วย!</h2>
+            <p id="modal-msg" style="color:#aaa; margin-top:5px;">คุณได้รับรางวัลใหญ่</p>
+            
+            <div id="reward-section" class="reward-box" style="display:none;">
+                <div style="font-size:0.7rem; color:#888; text-transform:uppercase;">แคปภาพนี้เพื่อรับรางวัล</div>
+                <div id="reward-code" class="reward-code">WIN-XXXX</div>
+            </div>
+
+            <button onclick="closeResultModal()" class="btn" style="background: #2196f3; font-size: 1rem; padding: 10px 30px; margin-top:15px;">ปิดหน้าต่าง</button>
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="modal-overlay" style="z-index: 2000;">
+        <div class="modal-content" style="max-width: 300px;">
+            <h3 style="margin-bottom: 20px;">🔐 ระบบจัดการ</h3>
+            <input type="password" id="adminPass" class="admin-input" placeholder="รหัสผ่าน (admin)">
+            <p id="loginError" style="color: #ef5350; font-size: 0.8rem; display: none; margin-top: -10px; margin-bottom: 10px;">รหัสผ่านไม่ถูกต้อง</p>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="document.getElementById('adminLoginModal').classList.remove('active')" class="btn" style="background: #555; font-size: 0.9rem;">ยกเลิก</button>
+                <button onclick="checkAdminLogin()" class="btn" style="background: #2196f3; font-size: 0.9rem;">เข้าสู่ระบบ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="adminPanelModal" class="modal-overlay" style="z-index: 2001;">
+        <div class="admin-modal-content">
+            <div class="admin-header">
+                <span style="font-weight: bold; font-size: 1.1rem;">🛠️ Admin Panel</span>
+                <button onclick="toggleAdminPanel(false)" style="background:none; border:none; color:#aaa; cursor:pointer;">✖</button>
+            </div>
+            
+            <!-- Config Status -->
+            <div style="background: rgba(0,0,0,0.4); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div id="apiStatusDot" style="width: 10px; height: 10px; border-radius: 50%; background: #777; transition: 0.3s;"></div>
+                        <span id="apiStatusText" style="font-size: 0.9rem; color: #aaa;">Checking Connection...</span>
+                    </div>
+                    <span style="font-size: 0.7rem; color: #555; background: #111; padding: 2px 6px; border-radius: 4px;">GOOGLE SHEET</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #ccc; font-size: 0.9rem;">Current Rule: <span id="adminConfigStatus" style="color: #fff; font-weight: bold;">Loading...</span></span>
+                    <button onclick="fetchGlobalConfig()" class="admin-btn btn-blue">🔄 Sync Data</button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <h4 style="margin:0; color: #ddd;">ประวัติการเล่นล่าสุด</h4>
+                <div>
+                    <button onclick="exportLogs()" class="admin-btn btn-green">📥 CSV</button>
+                    <button onclick="clearLogs()" class="admin-btn btn-red">🗑️ Clear</button>
+                </div>
+            </div>
+
+            <div class="admin-table-container">
+                <table id="logsTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Visitor ID</th>
+                            <th>Result</th>
+                            <th>Code</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsBody">
+                        <!-- Rows -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2026 ระบบ Lucky Draw Plinko Pro
+    </footer>
+
+    <!-- Game Logic -->
+    <script>
+        /**
+         * ==========================================
+         * JAVASCRIPT - Logic การทำงาน
+         * ==========================================
+         */
+
+        // --- 0. Configuration & Keys ---
+        // !!! สำคัญ: ใส่ URL ของ Google Apps Script ที่ Deploy เป็น Web App แล้วที่นี่ !!!
+        // ถ้าไม่ใส่ จะทำงานแบบ Offline (บันทึกในเครื่องเท่านั้น)
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxIUvcqysb8pRpZmZMustjNPdqswqPWGKgvy-_hXHuC7H9CBTNEsOPDDSpdK8Ni42T/exec'; 
+
+        const KEYS = {
+            LOGS: 'plinko_logs',
+            PLAYED: 'plinko_played_',        // + visitorId
+            LAST_PLAYED: 'plinko_last_ts_',  // + visitorId
+            CONFIG: 'plinko_config'
+        };
+
+        // Default Config
+        let gameConfig = {
+            cooldownType: 'none', // none, hour, day
+            cooldownValue: 1
+        };
+
+        // State
+        let visitorId = 'unknown';
+        const gameState = {
+            totalBalls: 3, ballsLeft: 3, ballsUsed: 0,
+            eligibleHits: 0, isGameOver: false, isAnimating: false,
+            canPlay: true, results: []
+        };
+
+        // --- 1. System Init (Fingerprint & Config) ---
+        async function initSystem() {
+            const loading = document.getElementById('loadingScreen');
+            
+            // 1. Get/Set Persistent Visitor ID (Fixes Infinite Replay Bug)
+            let storedId = localStorage.getItem('plinko_visitor_id');
+            
+            try {
+                // Try to get reliable ID from FingerprintJS
+                const fp = await fpPromise.then(fp => fp.get());
+                visitorId = fp.visitorId;
+                // Save it for fallback
+                localStorage.setItem('plinko_visitor_id', visitorId);
+            } catch (e) {
+                console.warn("FingerprintJS Failed. Using Fallback ID.");
+                if (storedId) {
+                    // Use existing fallback to maintain history
+                    visitorId = storedId;
+                } else {
+                    // Create new fallback ID only if none exists
+                    visitorId = 'user_' + Math.random().toString(36).substring(7);
+                    localStorage.setItem('plinko_visitor_id', visitorId);
+                }
+            }
+            console.log("Active Visitor ID:", visitorId);
+
+            // 2. Load Config from Google Sheet (Wait for this before checking status)
+            await fetchGlobalConfig();
+
+            // 3. Check Cooldown with latest config and ID
+            checkPlayerStatus();
+
+            // 4. Setup Game
+            resizeCanvas();
+            renderSlots();
+            updateStats();
+            loop(); 
+
+            lucide.createIcons();
+
+            // Hide Loading
+            loading.style.opacity = '0';
+            setTimeout(() => loading.style.display = 'none', 500);
+        }
+
+        async function fetchGlobalConfig() {
+            const dot = document.getElementById('apiStatusDot');
+            const text = document.getElementById('apiStatusText');
+            
+            if(dot) dot.style.background = '#ffc107'; 
+            if(text) { text.innerText = 'Syncing...'; text.style.color = '#ffc107'; }
+
+            if (!GOOGLE_SCRIPT_URL) {
+                if(dot) dot.style.background = '#666';
+                if(text) { text.innerText = 'Offline Mode'; text.style.color = '#aaa'; }
+                updateAdminUI();
+                return; 
+            }
+
+            try {
+                const res = await fetch(GOOGLE_SCRIPT_URL);
+                const data = await res.json();
+                if (data.status === 'success' && data.config) {
+                    gameConfig = data.config;
+                    // Fix: Ensure cooldownValue is a Number
+                    gameConfig.cooldownValue = Number(gameConfig.cooldownValue);
+                    
+                    localStorage.setItem(KEYS.CONFIG, JSON.stringify(gameConfig));
+                    console.log("Config loaded:", gameConfig);
+                    
+                    if(dot) { dot.style.background = '#4caf50'; dot.style.boxShadow = '0 0 8px #4caf50'; }
+                    if(text) { text.innerText = 'Connected'; text.style.color = '#4caf50'; }
+                }
+            } catch (e) {
+                console.warn("Offline or Fetch Error, using cache.");
+                const cached = localStorage.getItem(KEYS.CONFIG);
+                if (cached) gameConfig = JSON.parse(cached);
+                
+                if(dot) { dot.style.background = '#f44336'; dot.style.boxShadow = 'none'; }
+                if(text) { text.innerText = 'Connection Failed'; text.style.color = '#f44336'; }
+            }
+            updateAdminUI();
+        }
+
+        // --- 2. Cooldown Logic ---
+        function checkPlayerStatus() {
+            // Strict ID Check
+            if(!visitorId || visitorId === 'unknown') {
+                console.warn("VisitorID not ready yet.");
+                return;
+            }
+
+            const lastPlayed = localStorage.getItem(KEYS.LAST_PLAYED + visitorId);
+            const hasPlayed = localStorage.getItem(KEYS.PLAYED + visitorId);
+
+            console.log("--- Cooldown Check ---");
+            console.log("Visitor ID:", visitorId);
+            console.log("Has Played Flag:", hasPlayed);
+            console.log("Last Played TS:", lastPlayed);
+            console.log("Config Type:", gameConfig.cooldownType);
+            console.log("Config Value:", gameConfig.cooldownValue);
+
+            // ถ้าไม่เคยเล่นเลย -> ผ่าน
+            if (!hasPlayed) {
+                console.log("Result: User is New -> Unlock");
+                unlockGame();
+                return;
+            }
+
+            // Normalize Config (Fix for whitespace/case issues)
+            const type = (gameConfig.cooldownType || '').toString().trim().toLowerCase();
+            const val = Number(gameConfig.cooldownValue) || 1;
+
+            // ถ้า Config = none (ห้ามเล่นซ้ำเด็ดขาด)
+            if (type === 'none') {
+                console.log("Result: Type is None -> Lock forever");
+                lockGame('limit_reached');
+                return;
+            }
+
+            // คำนวณเวลา
+            const lastTime = parseInt(lastPlayed || 0);
+            const now = Date.now();
+            let cooldownMs = 0;
+
+            if (type === 'hour') cooldownMs = val * 3600000;
+            else if (type === 'day') cooldownMs = val * 86400000;
+            
+            console.log("Calculated Cooldown (ms):", cooldownMs);
+
+            const nextPlay = lastTime + cooldownMs;
+            const remaining = nextPlay - now;
+
+            console.log("Next Play:", new Date(nextPlay).toLocaleString());
+            console.log("Time Remaining (ms):", remaining);
+
+            if (now >= nextPlay) {
+                console.log("Result: Time passed -> Unlock");
+                unlockGame();
+            } else {
+                console.log("Result: Time NOT passed -> Lock");
+                lockGame('cooldown', nextPlay);
+            }
+        }
+
+        function lockGame(reason, nextTime) {
+            gameState.canPlay = false;
+            document.getElementById('drop-btn').disabled = true;
+            document.getElementById('cooldownPanel').style.display = 'block';
+            
+            const title = document.querySelector('.cd-title');
+            const timer = document.getElementById('countdownTimer');
+
+            if (reason === 'limit_reached') {
+                title.innerText = "คุณใช้สิทธิ์เล่นเกมไปแล้ว";
+                timer.innerText = "ขอบคุณที่ร่วมสนุก";
+            } else {
+                title.innerText = "ยังไม่ถึงเวลาเล่นรอบถัดไป";
+                startCountdown(nextTime);
+            }
+        }
+
+        function unlockGame() {
+            gameState.canPlay = true;
+            document.getElementById('drop-btn').disabled = false;
+            document.getElementById('cooldownPanel').style.display = 'none';
+        }
+
+        let countdownInterval;
+        function startCountdown(targetTime) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            const el = document.getElementById('countdownTimer');
+
+            function update() {
+                const diff = targetTime - Date.now();
+                if (diff <= 0) {
+                    clearInterval(countdownInterval);
+                    location.reload();
+                    return;
+                }
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                el.innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            }
+            update();
+            countdownInterval = setInterval(update, 1000);
+        }
+
+        // --- 3. Game Physics & Visuals (Adapted from Original) ---
+        const canvas = document.getElementById('plinkoCanvas');
+        const ctx = canvas.getContext('2d');
+        let config = { pegRows: 10, pegRadius: 0, ballRadius: 0, gravity: 0, bounce: 0.5, friction: 0.99 };
+        const slotsConfig = [
+            { id: 1, label: 'รางวัล', type: 'eligible' },
+            { id: 2, label: 'เสียใจ', type: 'none' },
+            { id: 3, label: 'รางวัล', type: 'eligible' },
+            { id: 4, label: 'เสียใจ', type: 'none' },
+            { id: 5, label: 'JACKPOT',type: 'jackpot' },
+            { id: 6, label: 'เสียใจ', type: 'none' },
+            { id: 7, label: 'รางวัล', type: 'eligible' },
+            { id: 8, label: 'เสียใจ', type: 'none' },
+            { id: 9, label: 'รางวัล', type: 'eligible' }
+        ];
+
+        let pegs = [], balls = [], width, height, scaleFactor = 1;
+
+        function resizeCanvas() {
+            const container = document.querySelector('.game-container');
+            width = container.clientWidth; 
+            height = width * 1.0; 
+            canvas.width = width; canvas.height = height;
+            scaleFactor = width / 400; 
+
+            config.pegRadius = 4 * scaleFactor;
+            config.ballRadius = 7 * scaleFactor;
+            config.gravity = 0.25 * scaleFactor; 
+            createPegs();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function createPegs() {
+            pegs = [];
+            const rows = config.pegRows;
+            const gap = width / (rows + 1);
+            const startY = 50 * scaleFactor;
+            for (let row = 0; row < rows; row++) {
+                const pegsInRow = row + 3; 
+                const rowWidth = (pegsInRow - 1) * gap;
+                const startX = (width - rowWidth) / 2;
+                for (let col = 0; col < pegsInRow; col++) {
+                    pegs.push({ x: startX + col * gap, y: startY + row * (gap * 0.8) });
+                }
+            }
+        }
+
+        function renderSlots() {
+            const container = document.getElementById('slots-ui');
+            container.innerHTML = '';
+            slotsConfig.forEach(slot => {
+                const el = document.createElement('div');
+                el.className = `slot ${slot.type === 'jackpot' ? 'jackpot' : slot.type === 'eligible' ? 'win' : 'lose'}`;
+                el.innerHTML = `<span>${slot.label}</span>`;
+                if(slot.type === 'jackpot') el.innerHTML += `<span style="font-size:0.7em">จบเกม</span>`;
+                container.appendChild(el);
+            });
+        }
+
+        class Ball {
+            constructor(isConfetti = false) {
+                this.isConfetti = isConfetti;
+                this.radius = isConfetti ? (3 * scaleFactor) : config.ballRadius; 
+                const spawnSpread = isConfetti ? width : (60 * scaleFactor); 
+                this.x = width / 2 + (Math.random() * spawnSpread - (spawnSpread/2)); 
+                this.y = isConfetti ? -20 : (20 * scaleFactor);
+                this.vx = (Math.random() - 0.5) * (2 * scaleFactor); 
+                this.vy = 0;
+                this.color = isConfetti ? `hsl(${Math.random() * 360}, 100%, 50%)` : '#fff';
+                this.active = true; this.settled = false;
+            }
+            update() {
+                if (!this.active) return;
+                this.vy += config.gravity; this.vx *= config.friction;
+                this.x += this.vx; this.y += this.vy;
+
+                if (this.x < this.radius) { this.x = this.radius; this.vx *= -0.6; }
+                else if (this.x > width - this.radius) { this.x = width - this.radius; this.vx *= -0.6; }
+
+                if (this.isConfetti) { if (this.y > height + 20) this.active = false; return; }
+
+                for (let peg of pegs) {
+                    const dx = this.x - peg.x; const dy = this.y - peg.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < this.radius + config.pegRadius) {
+                        const angle = Math.atan2(dy, dx);
+                        const sin = Math.sin(angle), cos = Math.cos(angle);
+                        this.x += cos * ((this.radius + config.pegRadius) - dist);
+                        this.y += sin * ((this.radius + config.pegRadius) - dist);
+                        
+                        let chaos = (Math.abs(this.x - width/2) < 50*scaleFactor) ? 4 : 2;
+                        if(chaos === 4) this.vx += (this.x < width/2 ? -0.5 : 0.5) * scaleFactor;
+                        this.vx = (this.vx * -0.5) + (Math.random()-0.5) * chaos * scaleFactor; 
+                        this.vy = Math.abs(this.vy) * 0.6;
+                    }
+                }
+                if (this.y > height - (10 * scaleFactor) && !this.settled) this.settle();
+            }
+            draw() {
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = this.isConfetti ? 0 : 10 * scaleFactor; ctx.shadowColor = "white";
+                ctx.fill(); ctx.closePath(); ctx.shadowBlur = 0;
+            }
+            settle() {
+                this.settled = true; this.active = false;
+                this.y = height - this.radius - (5 * scaleFactor);
+                const slotW = width / 9;
+                let idx = Math.floor(this.x / slotW);
+                if (idx < 0) idx = 0; if (idx > 8) idx = 8;
+                this.x = (idx * slotW) + (slotW / 2) + (Math.random()*4-2);
+                handleBallResult(idx);
+            }
+        }
+
+        function loop() {
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            pegs.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, config.pegRadius, 0, Math.PI * 2); ctx.fill(); });
+
+            for (let i = balls.length - 1; i >= 0; i--) {
+                const b = balls[i]; b.update(); b.draw();
+                if (b.isConfetti && b.y > height + 50) balls.splice(i, 1);
+            }
+
+            const active = balls.filter(b => b.active && !b.isConfetti);
+            gameState.isAnimating = active.length > 0;
+            if (!gameState.isAnimating && !gameState.isGameOver && gameState.ballsLeft > 0 && gameState.canPlay) {
+                document.getElementById('drop-btn').disabled = false;
+            }
+            requestAnimationFrame(loop);
+        }
+
+        // --- 4. Gameplay Logic ---
+
+        function dropBall() {
+            if (gameState.isGameOver || gameState.ballsLeft <= 0 || gameState.isAnimating || !gameState.canPlay) return;
+            gameState.ballsLeft--; gameState.ballsUsed++;
+            updateStats();
+            document.getElementById('drop-btn').disabled = true;
+            balls.push(new Ball(false));
+        }
+
+        function handleBallResult(idx) {
+            const res = slotsConfig[idx];
+            gameState.results.push(res);
+            addLog(`ลูกที่ ${gameState.ballsUsed}: ลงช่อง ${res.id} (${res.label})`, res.type);
+
+            if (res.type === 'jackpot') {
+                gameState.isGameOver = true;
+                gameState.eligibleHits++;
+                endGame(true, "JACKPOT!! คุณลงช่องกลางสุดโหด!");
+            } else if (res.type === 'eligible') {
+                gameState.eligibleHits++;
+            }
+            updateStats();
+
+            if (!gameState.isGameOver && gameState.ballsLeft === 0) {
+                checkWinCondition();
+            }
+        }
+
+        function checkWinCondition() {
+            gameState.isGameOver = true;
+            if (gameState.eligibleHits >= 2) endGame(true, `คุณทำได้ ${gameState.eligibleHits}/3 ลูก! รับรางวัลเลย!`);
+            else endGame(false, "เสียใจด้วย คุณสะสมแต้มไม่ครบ");
+        }
+
+        function endGame(isWin, msg) {
+            document.getElementById('drop-btn').style.display = 'none';
+            // Save Play History
+            const code = isWin ? 'WIN-' + Math.random().toString(36).substring(2, 7).toUpperCase() : '-';
+            savePlayHistory(isWin, code);
+
+            // Show Result
+            setTimeout(() => {
+                showResultModal(isWin, msg, code);
+                if(isWin) launchConfetti();
+            }, 500);
+        }
+
+        function savePlayHistory(isWin, code) {
+            const now = new Date();
+            // 1. Local Log
+            const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+            logs.unshift({ timestamp: now.toISOString(), visitorId, result: isWin ? 'WIN' : 'LOSE', code });
+            localStorage.setItem(KEYS.LOGS, JSON.stringify(logs));
+
+            // 2. Cooldown Markers
+            localStorage.setItem(KEYS.PLAYED + visitorId, 'true');
+            localStorage.setItem(KEYS.LAST_PLAYED + visitorId, now.getTime().toString());
+
+            // 3. Send to Google Sheet
+            if (GOOGLE_SCRIPT_URL) {
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        visitorId, 
+                        result: isWin ? 'WIN' : 'LOSE', 
+                        code, 
+                        timestamp: now.toISOString(),
+                        userAgent: navigator.userAgent // เพิ่มการส่งข้อมูล User Agent
+                    })
+                }).catch(e => console.error("Sheet Error:", e));
+            }
+        }
+
+        function showResultModal(isWin, msg, code) {
+            const modal = document.getElementById('result-modal');
+            const icon = document.getElementById('modal-icon');
+            const title = document.getElementById('modal-title');
+            const message = document.getElementById('modal-msg');
+            const rewardBox = document.getElementById('reward-section');
+
+            if (isWin) {
+                icon.innerHTML = '🏆';
+                title.innerText = 'ยินดีด้วย!'; title.style.color = '#4caf50';
+                message.innerText = msg;
+                rewardBox.style.display = 'block';
+                document.getElementById('reward-code').innerText = code;
+            } else {
+                icon.innerHTML = '😢';
+                title.innerText = 'พลาดรางวัล'; title.style.color = '#f44336';
+                message.innerText = msg + ' ไว้ลองใหม่โอกาสหน้า';
+                rewardBox.style.display = 'none';
+            }
+            modal.classList.add('active');
+        }
+        
+        function closeResultModal() {
+            // Reload เพื่อเข้าสู่โหมด Cooldown
+            location.reload(); 
+        }
+
+        // --- 5. UI Helpers ---
+        function updateStats() {
+            document.getElementById('balls-left-display').innerText = gameState.ballsLeft;
+            document.getElementById('score-display').innerText = `${gameState.eligibleHits}/2`;
+        }
+
+        function addLog(text, type) {
+            const container = document.getElementById('game-log');
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            let color = '';
+            if (type === 'jackpot') color = 'log-jackpot';
+            else if (type === 'eligible') color = 'log-success';
+            else color = 'log-fail';
+            item.innerHTML = `<span class="${color}">${text}</span>`;
+            container.prepend(item);
+        }
+
+        function launchConfetti() {
+            for(let i=0; i<50; i++) {
+                setTimeout(() => {
+                    const b = new Ball(true); 
+                    b.update = function() { 
+                        this.y += (5 * scaleFactor) + Math.random()*(5 * scaleFactor); 
+                        this.x += Math.random()*(2*scaleFactor) - (1*scaleFactor);
+                    }; 
+                    balls.push(b);
+                }, i * 50);
+            }
+        }
+
+        // --- 6. Admin System ---
+        let adminClickCount = 0;
+        let adminClickTimer;
+
+        document.getElementById('headerTrigger').addEventListener('click', () => {
+            adminClickCount++;
+            clearTimeout(adminClickTimer);
+            adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 1500);
+            if(adminClickCount >= 5) {
+                adminClickCount = 0;
+                document.getElementById('adminLoginModal').classList.add('active');
+                document.getElementById('adminPass').value = '';
+                document.getElementById('loginError').style.display = 'none';
+            }
+        });
+
+        function checkAdminLogin() {
+            const pass = document.getElementById('adminPass').value;
+            if(pass === 'admin') {
+                document.getElementById('adminLoginModal').classList.remove('active');
+                toggleAdminPanel(true);
+            } else {
+                document.getElementById('loginError').style.display = 'block';
+            }
+        }
+
+        function toggleAdminPanel(show) {
+            const modal = document.getElementById('adminPanelModal');
+            if(show) {
+                modal.classList.add('active');
+                renderAdminLogs();
+                updateAdminUI();
+            } else {
+                modal.classList.remove('active');
+            }
+        }
+
+        function updateAdminUI() {
+            const statusEl = document.getElementById('adminConfigStatus');
+            let text = 'Unlimited (Default)';
+            if(gameConfig.cooldownType === 'none') text = 'Play Once (None)';
+            else if(gameConfig.cooldownType === 'hour') text = `Every ${gameConfig.cooldownValue} Hour(s)`;
+            else if(gameConfig.cooldownType === 'day') text = `Every ${gameConfig.cooldownValue} Day(s)`;
+            statusEl.innerText = text;
+        }
+
+        function renderAdminLogs() {
+            const tbody = document.getElementById('logsBody');
+            tbody.innerHTML = '';
+            const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+            
+            logs.forEach(log => {
+                const tr = document.createElement('tr');
+                const date = new Date(log.timestamp).toLocaleString('th-TH');
+                const badgeClass = log.result === 'WIN' ? 'status-win' : 'status-lose';
+                tr.innerHTML = `
+                    <td>${date}</td>
+                    <td style="font-family:monospace; font-size:0.8rem; color:#2196f3;">${log.visitorId.substring(0,8)}...</td>
+                    <td><span class="status-badge ${badgeClass}">${log.result}</span></td>
+                    <td style="font-family:monospace; color:#ffd700;">${log.code}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function clearLogs() {
+            if(confirm('ล้างประวัติทั้งหมด?')) {
+                localStorage.removeItem(KEYS.LOGS);
+                renderAdminLogs();
+            }
+        }
+
+        function exportLogs() {
+            const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+            if(!logs.length) return alert('ไม่มีข้อมูล');
+            let csv = "Timestamp,VisitorID,Result,RewardCode\n" + 
+                logs.map(l => `${l.timestamp},${l.visitorId},${l.result},${l.code}`).join("\n");
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "plinko_logs.csv";
+            link.click();
+        }
+
+        // --- Start ---
+        document.getElementById('drop-btn').addEventListener('click', dropBall);
+        document.getElementById('restart-btn').addEventListener('click', () => location.reload()); // ใช้ Reload แทน Reset เพื่อเช็ค Cooldown ใหม่
+
+        // Init System
+        initSystem();
+
+    </script>
+</body>
+</html>

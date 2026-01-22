@@ -41,7 +41,8 @@
             align-items: center;
             min-height: 100vh;
             overflow-x: hidden;
-            overscroll-behavior: none; 
+            /* แก้ไข: เปลี่ยนจาก none เป็น auto หรือ contain เพื่อให้เลื่อนได้ปกติบนบาง Browser */
+            overscroll-behavior-y: contain; 
         }
 
         /* --- Loading Screen --- */
@@ -88,6 +89,8 @@
             padding: 10px;
             box-sizing: border-box;
             flex-grow: 1;
+            /* เพิ่ม padding-bottom เพื่อให้เลื่อนลงมาเจอปุ่มได้ง่ายขึ้นในจอเล็ก */
+            padding-bottom: 40px; 
         }
 
         /* --- Cooldown / Blocked Message --- */
@@ -128,7 +131,8 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             display: block; margin: 0 auto;
             border: 2px solid #333; border-bottom: none;
-            touch-action: none;
+            /* แก้ไข: ลบ touch-action: none ออก เพื่อให้เลื่อนหน้าจอได้เมื่อแตะโดนกระดาน */
+            /* touch-action: none;  <-- REMOVED */
         }
 
         .slots-container {
@@ -172,6 +176,7 @@
             border-radius: 8px; padding: 8px; max-height: 120px;
             overflow-y: auto; font-size: 0.85rem;
             scrollbar-width: thin; scrollbar-color: #555 transparent;
+            -webkit-overflow-scrolling: touch; /* เพิ่มความลื่นไหลบน iOS */
         }
         .log-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .log-success { color: #4caf50; }
@@ -212,7 +217,16 @@
         }
         .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
         .admin-input { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; margin-bottom: 15px; border-radius: 6px; text-align: center; }
-        .admin-table-container { flex: 1; overflow-y: auto; margin-bottom: 15px; background: #1a1a24; border-radius: 6px; }
+        
+        .admin-table-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            margin-bottom: 15px; 
+            background: #1a1a24; 
+            border-radius: 6px; 
+            -webkit-overflow-scrolling: touch; /* เพิ่มความลื่นไหลบน iOS */
+        }
+        
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         th { background: #222; position: sticky; top: 0; text-align: left; padding: 8px; color: #888; }
         td { padding: 8px; border-bottom: 1px solid #2a2a35; }
